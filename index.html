@@ -683,38 +683,59 @@ auth.onAuthStateChanged(user=>{
   } else {
     auth.signInAnonymously().catch(err=>{
       console.error(err);
-      document.querySelector('#splash small').textContent = 'Erro ao conectar — verifique o firebaseConfig';
+      splashError('Erro ao autenticar: ' + (err.code||err.message) + ' — confira "Authorized domains" em Authentication > Settings.');
     });
   }
 });
+setTimeout(()=>{
+  if(document.getElementById('app').style.display!=='block' && !document.querySelector('#splash small').textContent.includes('Erro')){
+    splashError('Demorando mais que o esperado. Abra o Console do navegador (F12) pra ver o erro exato, ou confira as regras do Firestore e o Authorized domains.');
+  }
+}, 9000);
 
 function userDoc(path){ return db.collection('users').doc(uid).collection(path); }
 
+function splashError(msg){
+  const el = document.querySelector('#splash small');
+  el.textContent = msg;
+  el.style.color = '#df7849';
+  el.style.maxWidth = '280px';
+  el.style.textAlign = 'center';
+  el.style.lineHeight = '1.5';
+}
+
 async function bootstrapData(){
-  // seed categorias/carteiras padrão se ainda não existem
-  const catSnap = await userDoc('categorias').limit(1).get();
-  if(catSnap.empty){
-    const batch = db.batch();
-    DEFAULT_CATEGORIES.forEach(c=>{
-      const ref = userDoc('categorias').doc();
-      batch.set(ref, c);
-    });
-    await batch.commit();
-  }
-  const walSnap = await userDoc('carteiras').limit(1).get();
-  if(walSnap.empty){
-    const batch = db.batch();
-    DEFAULT_WALLETS.forEach(w=>{
-      const ref = userDoc('carteiras').doc();
-      batch.set(ref, w);
-    });
-    await batch.commit();
+  try{
+    // seed categorias/carteiras padrão se ainda não existem
+    const catSnap = await userDoc('categorias').limit(1).get();
+    if(catSnap.empty){
+      const batch = db.batch();
+      DEFAULT_CATEGORIES.forEach(c=>{
+        const ref = userDoc('categorias').doc();
+        batch.set(ref, c);
+      });
+      await batch.commit();
+    }
+    const walSnap = await userDoc('carteiras').limit(1).get();
+    if(walSnap.empty){
+      const batch = db.batch();
+      DEFAULT_WALLETS.forEach(w=>{
+        const ref = userDoc('carteiras').doc();
+        batch.set(ref, w);
+      });
+      await batch.commit();
+    }
+  }catch(err){
+    console.error('Erro no bootstrap:', err);
+    splashError('Erro ao acessar o Firestore: ' + (err.code||err.message) + ' — confira as regras do banco.');
+    return;
   }
 
   let loaded = 0;
+  const expected = 5;
   const checkAllLoaded = ()=>{
     loaded++;
-    if(loaded>=5){
+    if(loaded>=expected){
       document.getElementById('splash').style.display='none';
       document.getElementById('app').style.display='block';
       renderAll();
@@ -734,6 +755,9 @@ function listen(coll, onFirst){
     state[coll] = snap.docs.map(d=>({id:d.id, ...d.data()}));
     if(first){ first=false; onFirst(); }
     else { processRecurringBills(); renderAll(); }
+  }, err=>{
+    console.error('Erro ao escutar '+coll+':', err);
+    splashError('Erro ao carregar "'+coll+'": ' + (err.code||err.message) + ' — confira as regras do Firestore.');
   });
   unsubscribers.push(unsub);
 }
